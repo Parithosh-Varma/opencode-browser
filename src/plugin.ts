@@ -11,7 +11,7 @@ import { tool } from "@opencode-ai/plugin";
 import { writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { connectFirstPage, connectTarget, listTargets } from "./lib/cdp.js";
+import { connectFirstPage, connectTargetById, listTargets } from "./lib/cdp.js";
 import { resolveUid, takeSnapshot, type Snapshot } from "./lib/snapshot.js";
 
 const snapshotCache = new Map<string, Snapshot>();
@@ -25,7 +25,8 @@ async function getClient(browserUrl: string, targetId?: string) {
     const targets = await listTargets(browserUrl);
     const target = targets.find((t) => t.id === targetId);
     if (!target) throw new Error(`Target ${targetId} not found`);
-    return { client: await connectTarget(target.webSocketDebuggerUrl), target };
+    const client = await connectTargetById(browserUrl, targetId);
+    return { client, target };
   }
   return connectFirstPage(browserUrl);
 }

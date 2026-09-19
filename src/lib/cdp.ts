@@ -1,8 +1,6 @@
 /**
- * Minimal Chrome DevTools Protocol client backed by a raw WebSocket.
+ * Minimal Chrome DevTools Protocol client backed by native WebSocket.
  */
-
-import WebSocket from "ws";
 
 type CDPResponse = {
   id: number;
@@ -26,33 +24,56 @@ export class CDPClient {
 
   constructor(public readonly endpoint: string) {}
 
-  async connect(): Promise<void> {
-    if (this.ws?.readyState === WebSocket.OPEN) return;
-    return await new Promise((resolve, reject) => {
-      this.ws = new WebSocket(this.endpoint);
-      this.ws.once("open", () => resolve());
-      this.ws.once("error", (err) => reject(err));
-      this.ws.on("message", (data: Buffer) => {
-        const msg = JSON.parse(data.toString());
-        if (msg.id !== undefined && this.pending.has(msg.id)) {
-          const p = this.pending.get(msg.id)!;
-          this.pending.delete(msg.id);
-          p.resolve(msg);
+  async connect(retries = 3): Promise<void> {
+    if (this.ws?.readyState === 1) return; // 1 = OPEN
+    let lastErr: Error | null = null;
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const ws = new WebSocket(this.endpoint);
+          const timeout = setTimeout(() => {
+            ws.close();
+            reject(new Error("WebSocket connect timeout"));
+          }, 5000);
+          ws.addEventListener("open", () => {
+            clearTimeout(timeout);
+            this.ws = ws;
+            resolve();
+          });
+          ws.addEventListener("error", (ev) => {
+            clearTimeout(timeout);
+            reject(new Error(String(ev.message || "WebSocket error")));
+          });
+          ws.addEventListener("message", (ev) => {
+            const msg = JSON.parse(String(ev.data));
+            if (msg.id !== undefined && this.pending.has(msg.id)) {
+              const p = this.pending.get(msg.id)!;
+              this.pending.delete(msg.id);
+              p.resolve(msg);
+            }
+            if (msg.method && this.eventHandlers.has(msg.method)) {
+              for (const handler of this.eventHandlers.get(msg.method)!) {
+                handler(msg.params ?? {});
+              }
+            }
+          });
+          ws.addEventListener("close", () => {
+            this.ws = null;
+          });
+        });
+        return;
+      } catch (err) {
+        lastErr = err as Error;
+        if (attempt < retries - 1) {
+          await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
         }
-        if (msg.method && this.eventHandlers.has(msg.method)) {
-          for (const handler of this.eventHandlers.get(msg.method)!) {
-            handler(msg.params ?? {});
-          }
-        }
-      });
-      this.ws.on("close", () => {
-        this.ws = null;
-      });
-    });
+      }
+    }
+    throw lastErr ?? new Error("Failed to connect after retries");
   }
 
   async send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    if (!this.ws || this.ws.readyState !== 1) {
       throw new Error("CDP not connected");
     }
     const id = ++this.id;
@@ -110,7 +131,16 @@ export async function listTargets(browserUrl: string): Promise<BrowserTarget[]> 
 
 export async function connectTarget(wsUrl: string): Promise<CDPClient> {
   const client = new CDPClient(wsUrl);
-  await client.connect();
+  await client.connect(3);
+  return client;
+}
+
+export async function connectTargetById(browserUrl: string, targetId: string): Promise<CDPClient> {
+  const parsed = new URL(browserUrl);
+  const wsProtocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${wsProtocol}//${parsed.host}/devtools/page/${targetId}`;
+  const client = new CDPClient(wsUrl);
+  await client.connect(3);
   return client;
 }
 
