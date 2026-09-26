@@ -1,0 +1,1 @@
+{"name":"agent-orchestra","private":true,"type":"module","scripts":{"start":"bun cli.ts","typecheck":"bunx tsc --noEmit"},"dependencies":{"ws":"^8.18.3"},"devDependencies":{"@types/bun":"latest","@types/ws":"^8.18.1","typescript":"^5.9.2"}}
