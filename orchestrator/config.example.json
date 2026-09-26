@@ -1,0 +1,22 @@
+{
+  "maxTurns": 12,
+  "maxCharsPerMessage": 18000,
+  "stabilityPolls": 4,
+  "stabilityDelayMs": 1200,
+  "workers": {
+    "terminal": {
+      "type": "terminal",
+      "command": "opencode",
+      "args": ["run"]
+    },
+    "claude-web": {
+      "type": "browser",
+      "browserUrl": "http://127.0.0.1:9222",
+      "targetId": "",
+      "inputSelector": "textarea, [contenteditable=true]",
+      "sendSelector": "button[type=submit]",
+      "assistantSelector": "[data-testid*=assistant], [data-message-author-role=assistant], main"
+    }
+  },
+  "pipeline": ["terminal", "claude-web", "terminal"]
+}
